@@ -1,5 +1,13 @@
 """
-Hybrid search implementation that combines vector search, keyword search, and metadata filtering.
+Hybrid retrieval implementation that combines vector search, keyword search, and metadata filtering.
+
+This module implements a hybrid retrieval approach that leverages both semantic (vector)
+and lexical (keyword) search methods, along with metadata filtering to provide
+comprehensive and accurate document retrieval.
+
+Author: yuqings
+Created: February 2024
+License: MIT
 """
 
 import logging
@@ -9,47 +17,66 @@ from rank_bm25 import BM25Okapi
 from sklearn.preprocessing import normalize
 
 from app.config import config
-from app.data.vector_store import VectorStore
 from app.data.document_store import DocumentStore
-from app.models.embeddings import EmbeddingModel
-from app.retrieval.relevance_scoring import RelevanceScorer
+from app.models.embeddings import EmbeddingManager
+from app.retrieval.base import BaseRetriever
 
-logger = logging.getLogger("ent_rag.retrieval.hybrid_search")
+logger = logging.getLogger("ent_rag.retrieval.hybrid")
 
 
-class HybridSearcher:
+class HybridRetriever(BaseRetriever):
     """
-    Implements hybrid search combining vector search, keyword search, and metadata filtering.
+    Implements hybrid retrieval combining vector search, keyword search, and metadata filtering.
+    
+    This retriever uses a weighted combination of vector similarity and BM25 keyword matching
+    to find the most relevant documents for a given query. It also supports metadata filtering
+    to narrow down the search space based on document attributes.
+    
+    Attributes:
+        document_store: Storage for documents and their metadata
+        embedding_manager: Manager for embedding models
+        hybrid_weight: Weight for balancing vector and keyword search (0-1)
     """
     
-    def __init__(self):
-        """Initialize the hybrid searcher with necessary components."""
-        self.vector_store = VectorStore()
-        self.document_store = DocumentStore()
-        self.embedding_model = EmbeddingModel()
-        self.relevance_scorer = RelevanceScorer()
-        self.hybrid_weight = config.retrieval.hybrid_search_weight
+    def __init__(
+        self,
+        document_store: Optional[DocumentStore] = None,
+        embedding_manager: Optional[EmbeddingManager] = None,
+        hybrid_weight: Optional[float] = None
+    ):
+        """
+        Initialize the hybrid retriever with necessary components.
+        
+        Args:
+            document_store: Storage for documents and their metadata
+            embedding_manager: Manager for embedding models
+            hybrid_weight: Weight for balancing vector and keyword search (0-1)
+        """
+        self.document_store = document_store or DocumentStore()
+        self.embedding_manager = embedding_manager or EmbeddingManager()
+        self.hybrid_weight = hybrid_weight or config.retrieval.hybrid_search_weight
+        logger.info(f"HybridRetriever initialized with weight: {self.hybrid_weight}")
     
-    def search(
+    def retrieve(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
-        use_hybrid: bool = True,
-        top_k: int = 5
+        top_k: int = 5,
+        use_hybrid: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Perform a hybrid search combining vector and keyword search with metadata filtering.
+        Retrieve documents using hybrid search combining vector and keyword search with metadata filtering.
         
         Args:
             query: The search query
             filters: Metadata filters to apply
-            use_hybrid: Whether to use hybrid search (if False, only vector search is used)
             top_k: Number of results to return
+            use_hybrid: Whether to use hybrid search (if False, only vector search is used)
             
         Returns:
-            List of search results with document content and metadata
+            List of retrieved documents with content and metadata
         """
-        logger.debug(f"Performing search for query: '{query}' with filters: {filters}")
+        logger.debug(f"Retrieving documents for query: '{query}' with filters: {filters}")
         
         # Get expanded top_k for hybrid search
         expanded_k = top_k * 3 if use_hybrid else top_k
@@ -89,10 +116,10 @@ class HybridSearcher:
             List of vector search results
         """
         # Generate query embedding
-        query_embedding = self.embedding_model.embed_query(query)
+        query_embedding = self.embedding_manager.embed_query(query)
         
         # Search vector store
-        results = self.vector_store.search(
+        results = self.document_store.vector_store.search(
             query_embedding=query_embedding,
             filters=filters,
             top_k=top_k
@@ -124,8 +151,8 @@ class HybridSearcher:
             return []
         
         # Prepare corpus for BM25
-        corpus = [doc["content"] for doc in documents]
-        tokenized_corpus = [doc.split() for doc in corpus]
+        corpus = [doc.content for doc in documents]
+        tokenized_corpus = [doc.content.split() for doc in documents]
         
         # Create BM25 model
         bm25 = BM25Okapi(tokenized_corpus)
@@ -142,9 +169,9 @@ class HybridSearcher:
         for idx in top_indices:
             if doc_scores[idx] > 0:  # Only include results with non-zero scores
                 results.append({
-                    "id": documents[idx]["id"],
-                    "content": documents[idx]["content"],
-                    "metadata": documents[idx]["metadata"],
+                    "id": documents[idx].id,
+                    "content": documents[idx].content,
+                    "metadata": documents[idx].metadata,
                     "score": float(doc_scores[idx])
                 })
         
@@ -216,11 +243,8 @@ class HybridSearcher:
         combined_results = list(combined_dict.values())
         combined_results.sort(key=lambda x: x["combined_score"], reverse=True)
         
-        # Apply custom relevance scoring
-        scored_results = self.relevance_scorer.score(query, combined_results)
-        
         # Return top_k results
-        return scored_results[:top_k]
+        return combined_results[:top_k]
     
     def _format_results(
         self,
@@ -245,16 +269,34 @@ class HybridSearcher:
                 "id": result["id"],
                 "content": result["content"],
                 "metadata": result["metadata"],
-                "score": result.get("combined_score", result.get("score", 0.0))
+                "score": result.get("combined_score", result.get("score", 0.0)),
+                "relevance": self._calculate_relevance(query, result["content"])
             }
             
-            # Add highlight snippets if available
-            if "vector_score" in result and "keyword_score" in result:
-                formatted_result["details"] = {
-                    "vector_score": result["vector_score"],
-                    "keyword_score": result["keyword_score"]
-                }
-            
+            # Add to formatted results
             formatted_results.append(formatted_result)
         
-        return formatted_results 
+        return formatted_results
+    
+    def _calculate_relevance(self, query: str, content: str) -> float:
+        """
+        Calculate a simple relevance score based on term overlap.
+        
+        Args:
+            query: The search query
+            content: The document content
+            
+        Returns:
+            Relevance score between 0 and 1
+        """
+        query_terms = set(query.lower().split())
+        content_terms = set(content.lower().split())
+        
+        if not query_terms:
+            return 0.0
+        
+        # Calculate Jaccard similarity
+        intersection = query_terms.intersection(content_terms)
+        union = query_terms.union(content_terms)
+        
+        return len(intersection) / len(query_terms) 

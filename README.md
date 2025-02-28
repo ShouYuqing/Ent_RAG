@@ -248,4 +248,22 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## References
+
+The implementation of Ent_RAG draws inspiration from several academic papers and open-source projects:
+
+### Multi-Stage Retrieval
+- Karpukhin, V., Oguz, B., Min, S., Lewis, P., Wu, L., Edunov, S., Chen, D., & Yih, W. (2020). [Dense Passage Retrieval for Open-Domain Question Answering](https://arxiv.org/abs/2004.04906). In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP).
+- Xiong, L., Xiong, C., Li, Y., Tang, K., Liu, J., Bennett, P., Ahmed, J., & Overwijk, A. (2021). [Approximate Nearest Neighbor Negative Contrastive Learning for Dense Text Retrieval](https://arxiv.org/abs/2007.00808). In International Conference on Learning Representations (ICLR).
+- Pradeep, R., Nogueira, R., & Lin, J. (2021). [The Expando-Mono-Duo Design Pattern for Text Ranking with Pretrained Sequence-to-Sequence Models](https://arxiv.org/abs/2101.05667). arXiv preprint arXiv:2101.05667.
+
+### Relevance Scoring
+- Robertson, S. E., & Zaragoza, H. (2009). [The Probabilistic Relevance Framework: BM25 and Beyond](https://dl.acm.org/doi/10.1561/1500000019). Foundations and Trends in Information Retrieval, 3(4), 333-389.
+- Reimers, N., & Gurevych, I. (2019). [Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks](https://arxiv.org/abs/1908.10084). In Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP).
+- Nogueira, R., & Cho, K. (2019). [Passage Re-ranking with BERT](https://arxiv.org/abs/1901.04085). arXiv preprint arXiv:1901.04085.
+
+### Chain-of-Thought and Prompt Engineering
+- Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., Chi, E., Le, Q., & Zhou, D. (2022). [Chain-of-Thought Prompting Elicits Reasoning in Large Language Models](https://arxiv.org/abs/2201.11903). In Advances in Neural Information Processing Systems (NeurIPS).
+- Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P., ... & Amodei, D. (2020). [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165). In Advances in Neural Information Processing Systems (NeurIPS). 

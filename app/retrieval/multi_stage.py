@@ -1,426 +1,377 @@
 """
-Multi-stage retrieval with pre-filtering and reranking.
+Multi-stage retrieval implementation for the Ent_RAG system.
+
+This module implements a multi-stage retrieval approach that combines pre-filtering
+and reranking to improve retrieval accuracy and efficiency. It allows for a coarse-to-fine
+approach where an initial broad retrieval is followed by more precise filtering and reranking.
+
+Author: yuqings
+Created: February 2024
+License: MIT
 """
 
 import logging
 from typing import Dict, List, Optional, Any, Union, Callable
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from collections import defaultdict
 
 from app.config import config
-from app.models.embeddings import EmbeddingModel
-from app.models.llm import LLMManager
+from app.data.document_store import DocumentStore
+from app.retrieval.base import BaseRetriever
+from app.retrieval.hybrid import HybridRetriever
+from app.retrieval.reranking import ReRanker
 
 logger = logging.getLogger("ent_rag.retrieval.multi_stage")
 
 
-class PreFilter:
+class MultiStageRetriever(BaseRetriever):
     """
-    Implements pre-filtering for multi-stage retrieval.
+    Implements multi-stage retrieval with pre-filtering and reranking.
+    
+    This retriever uses a coarse-to-fine approach where an initial broad retrieval
+    is followed by more precise filtering and reranking. This approach can improve
+    both efficiency (by reducing the number of documents that need detailed processing)
+    and accuracy (by applying more sophisticated ranking to a smaller set of candidates).
+    
+    Attributes:
+        document_store: Storage for documents and their metadata
+        base_retriever: Base retriever for initial document retrieval
+        reranker: Reranker for improving relevance of retrieved documents
+        pre_filter_multiplier: Multiplier for the number of documents to retrieve in the first stage
+        use_metadata_filters: Whether to use metadata for filtering
+        use_content_filters: Whether to use content-based filtering
     """
     
-    def __init__(self):
-        """Initialize the pre-filter with necessary components."""
-        self.embedding_model = EmbeddingModel()
+    def __init__(
+        self,
+        document_store: Optional[DocumentStore] = None,
+        base_retriever: Optional[BaseRetriever] = None,
+        reranker: Optional[ReRanker] = None,
+        pre_filter_multiplier: int = 3,
+        use_metadata_filters: bool = True,
+        use_content_filters: bool = True
+    ):
+        """
+        Initialize the multi-stage retriever with necessary components.
+        
+        Args:
+            document_store: Storage for documents and their metadata
+            base_retriever: Base retriever for initial document retrieval
+            reranker: Reranker for improving relevance of retrieved documents
+            pre_filter_multiplier: Multiplier for the number of documents to retrieve in the first stage
+            use_metadata_filters: Whether to use metadata for filtering
+            use_content_filters: Whether to use content-based filtering
+        """
+        self.document_store = document_store or DocumentStore()
+        self.base_retriever = base_retriever or HybridRetriever(document_store=self.document_store)
+        self.reranker = reranker or ReRanker()
+        self.pre_filter_multiplier = pre_filter_multiplier
+        self.use_metadata_filters = use_metadata_filters
+        self.use_content_filters = use_content_filters
+        
+        logger.info(f"MultiStageRetriever initialized with pre_filter_multiplier: {pre_filter_multiplier}")
     
-    def filter(
+    def retrieve(
         self,
         query: str,
-        documents: List[Dict[str, Any]],
         filters: Optional[Dict[str, Any]] = None,
-        max_documents: int = 100
+        top_k: int = 5,
+        **kwargs
     ) -> List[Dict[str, Any]]:
         """
-        Pre-filter documents based on metadata and basic relevance.
+        Retrieve documents using a multi-stage approach.
+        
+        This method:
+        1. Performs an initial broad retrieval
+        2. Applies pre-filtering based on metadata and content
+        3. Reranks the filtered results
         
         Args:
             query: The search query
-            documents: List of documents to filter
             filters: Metadata filters to apply
-            max_documents: Maximum number of documents to return
+            top_k: Number of results to return
+            **kwargs: Additional retriever-specific parameters
+            
+        Returns:
+            List of retrieved documents with content and metadata
+        """
+        logger.debug(f"Multi-stage retrieval for query: '{query}' with filters: {filters}")
+        
+        # Stage 1: Initial broad retrieval
+        initial_k = top_k * self.pre_filter_multiplier
+        initial_results = self.base_retriever.retrieve(
+            query=query,
+            filters=filters,
+            top_k=initial_k
+        )
+        
+        logger.debug(f"Initial retrieval returned {len(initial_results)} documents")
+        
+        if not initial_results:
+            return []
+        
+        # Stage 2: Pre-filtering
+        filtered_results = self._apply_pre_filters(query, initial_results, filters)
+        
+        logger.debug(f"Pre-filtering reduced to {len(filtered_results)} documents")
+        
+        if not filtered_results:
+            # If filtering removed all results, return initial results
+            filtered_results = initial_results
+        
+        # Stage 3: Reranking
+        reranked_results = self.reranker.rerank(
+            query=query,
+            documents=filtered_results,
+            top_k=top_k
+        )
+        
+        logger.debug(f"Reranking returned {len(reranked_results)} documents")
+        
+        return reranked_results
+    
+    def _apply_pre_filters(
+        self,
+        query: str,
+        documents: List[Dict[str, Any]],
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Apply pre-filtering to the initial retrieval results.
+        
+        This method applies both metadata-based and content-based filtering
+        to reduce the number of documents that need to be reranked.
+        
+        Args:
+            query: The search query
+            documents: Initial retrieval results
+            filters: Metadata filters to apply
             
         Returns:
             Filtered list of documents
         """
-        logger.debug(f"Pre-filtering {len(documents)} documents")
+        filtered_docs = documents
         
-        # Apply metadata filters if provided
-        if filters:
-            filtered_docs = self._apply_metadata_filters(documents, filters)
-        else:
-            filtered_docs = documents
+        # Apply metadata filters if enabled
+        if self.use_metadata_filters:
+            filtered_docs = self._apply_metadata_filters(filtered_docs, filters)
         
-        # If we have too many documents, apply basic relevance filtering
-        if len(filtered_docs) > max_documents:
-            filtered_docs = self._apply_relevance_filter(query, filtered_docs, max_documents)
+        # Apply content filters if enabled
+        if self.use_content_filters:
+            filtered_docs = self._apply_content_filters(query, filtered_docs)
         
-        logger.debug(f"Pre-filtering returned {len(filtered_docs)} documents")
         return filtered_docs
     
     def _apply_metadata_filters(
         self,
         documents: List[Dict[str, Any]],
-        filters: Dict[str, Any]
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Apply metadata filters to documents.
+        Apply metadata-based filtering to documents.
+        
+        This method filters documents based on their metadata attributes,
+        such as source, author, date, etc.
         
         Args:
-            documents: List of documents to filter
+            documents: Documents to filter
             filters: Metadata filters to apply
             
         Returns:
             Filtered list of documents
         """
+        if not filters:
+            return documents
+        
         filtered_docs = []
         
         for doc in documents:
             metadata = doc.get("metadata", {})
-            match = True
+            include_doc = True
             
             for key, value in filters.items():
-                # Handle list values (OR condition)
-                if isinstance(value, list):
-                    if metadata.get(key) not in value:
-                        match = False
-                        break
-                # Handle exact match
-                elif metadata.get(key) != value:
-                    match = False
+                # Skip special filter keys
+                if key.startswith("_"):
+                    continue
+                
+                # Check if metadata has the key
+                if key not in metadata:
+                    include_doc = False
                     break
+                
+                # Check if value matches
+                if isinstance(value, list):
+                    # List of possible values
+                    if metadata[key] not in value:
+                        include_doc = False
+                        break
+                elif isinstance(value, dict):
+                    # Range or comparison
+                    if "gt" in value and metadata[key] <= value["gt"]:
+                        include_doc = False
+                        break
+                    if "gte" in value and metadata[key] < value["gte"]:
+                        include_doc = False
+                        break
+                    if "lt" in value and metadata[key] >= value["lt"]:
+                        include_doc = False
+                        break
+                    if "lte" in value and metadata[key] > value["lte"]:
+                        include_doc = False
+                        break
+                else:
+                    # Exact match
+                    if metadata[key] != value:
+                        include_doc = False
+                        break
             
-            if match:
+            if include_doc:
                 filtered_docs.append(doc)
         
         return filtered_docs
     
-    def _apply_relevance_filter(
+    def _apply_content_filters(
         self,
         query: str,
-        documents: List[Dict[str, Any]],
-        max_documents: int
+        documents: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        Apply basic relevance filtering using TF-IDF.
+        Apply content-based filtering to documents.
+        
+        This method filters documents based on their content,
+        such as the presence of key terms, semantic similarity, etc.
         
         Args:
             query: The search query
-            documents: List of documents to filter
-            max_documents: Maximum number of documents to return
+            documents: Documents to filter
             
         Returns:
             Filtered list of documents
         """
-        # Extract document contents
-        contents = [doc.get("content", "") for doc in documents]
-        
-        # Create TF-IDF vectorizer
-        vectorizer = TfidfVectorizer(stop_words="english")
-        tfidf_matrix = vectorizer.fit_transform(contents)
-        
-        # Transform query
-        query_vector = vectorizer.transform([query])
-        
-        # Calculate similarity scores
-        similarity_scores = cosine_similarity(query_vector, tfidf_matrix)[0]
-        
-        # Get indices of top documents
-        top_indices = np.argsort(similarity_scores)[-max_documents:][::-1]
-        
-        # Return top documents
-        return [documents[i] for i in top_indices]
-
-
-class Reranker:
-    """
-    Implements reranking for multi-stage retrieval.
-    """
-    
-    def __init__(self):
-        """Initialize the reranker with necessary components."""
-        self.embedding_model = EmbeddingModel()
-        self.llm_manager = LLMManager()
-    
-    def rerank(
-        self,
-        query: str,
-        documents: List[Dict[str, Any]],
-        method: str = "cross_encoder",
-        top_k: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Rerank documents based on relevance to the query.
-        
-        Args:
-            query: The search query
-            documents: List of documents to rerank
-            method: Reranking method to use (cross_encoder, semantic, or llm)
-            top_k: Number of documents to return (None for all)
-            
-        Returns:
-            Reranked list of documents
-        """
         if not documents:
             return []
         
-        logger.debug(f"Reranking {len(documents)} documents using {method} method")
+        # Extract key terms from query
+        key_terms = self._extract_key_terms(query)
         
-        # Choose reranking method
-        if method == "cross_encoder":
-            reranked_docs = self._rerank_cross_encoder(query, documents)
-        elif method == "semantic":
-            reranked_docs = self._rerank_semantic(query, documents)
-        elif method == "llm":
-            reranked_docs = self._rerank_llm(query, documents)
-        else:
-            logger.warning(f"Unknown reranking method: {method}, using semantic reranking")
-            reranked_docs = self._rerank_semantic(query, documents)
+        if not key_terms:
+            return documents
         
-        # Limit results if top_k is specified
-        if top_k is not None and top_k < len(reranked_docs):
-            reranked_docs = reranked_docs[:top_k]
+        # Score documents based on key term presence
+        scored_docs = []
         
-        logger.debug(f"Reranking returned {len(reranked_docs)} documents")
-        return reranked_docs
-    
-    def _rerank_cross_encoder(
-        self,
-        query: str,
-        documents: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        Rerank documents using a cross-encoder model.
-        
-        Args:
-            query: The search query
-            documents: List of documents to rerank
-            
-        Returns:
-            Reranked list of documents
-        """
-        try:
-            # Import cross-encoder only when needed
-            from sentence_transformers import CrossEncoder
-            
-            # Initialize cross-encoder model
-            model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-            
-            # Prepare document pairs
-            pairs = [(query, doc.get("content", "")) for doc in documents]
-            
-            # Get scores
-            scores = model.predict(pairs)
-            
-            # Create reranked documents with updated scores
-            reranked_docs = []
-            for i, doc in enumerate(documents):
-                reranked_doc = doc.copy()
-                reranked_doc["score"] = float(scores[i])
-                reranked_docs.append(reranked_doc)
-            
-            # Sort by score in descending order
-            reranked_docs.sort(key=lambda x: x["score"], reverse=True)
-            
-            return reranked_docs
-        
-        except ImportError:
-            logger.warning("CrossEncoder not available, falling back to semantic reranking")
-            return self._rerank_semantic(query, documents)
-        except Exception as e:
-            logger.error(f"Error in cross-encoder reranking: {str(e)}")
-            return self._rerank_semantic(query, documents)
-    
-    def _rerank_semantic(
-        self,
-        query: str,
-        documents: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        Rerank documents using semantic similarity.
-        
-        Args:
-            query: The search query
-            documents: List of documents to rerank
-            
-        Returns:
-            Reranked list of documents
-        """
-        # Generate query embedding
-        query_embedding = self.embedding_model.embed_query(query)
-        
-        # Create reranked documents with updated scores
-        reranked_docs = []
         for doc in documents:
-            # Get or generate document embedding
-            if "embedding" in doc:
-                doc_embedding = doc["embedding"]
-            else:
-                doc_content = doc.get("content", "")
-                doc_embedding = self.embedding_model.embed_text(doc_content)
+            content = doc.get("content", "").lower()
+            score = 0
             
-            # Calculate cosine similarity
-            similarity = self._cosine_similarity(query_embedding, doc_embedding)
+            for term, weight in key_terms.items():
+                if term in content:
+                    # Increase score based on term frequency and weight
+                    term_freq = content.count(term)
+                    score += term_freq * weight
             
-            # Create reranked document
-            reranked_doc = doc.copy()
-            reranked_doc["score"] = float(similarity)
-            reranked_docs.append(reranked_doc)
+            # Only include documents with a positive score
+            if score > 0:
+                doc_copy = doc.copy()
+                doc_copy["content_filter_score"] = score
+                scored_docs.append(doc_copy)
         
-        # Sort by score in descending order
-        reranked_docs.sort(key=lambda x: x["score"], reverse=True)
+        # If no documents passed the filter, return all documents
+        if not scored_docs:
+            return documents
         
-        return reranked_docs
+        # Sort by content filter score
+        scored_docs.sort(key=lambda x: x.get("content_filter_score", 0), reverse=True)
+        
+        return scored_docs
     
-    def _rerank_llm(
-        self,
-        query: str,
-        documents: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _extract_key_terms(self, query: str) -> Dict[str, float]:
         """
-        Rerank documents using LLM-based relevance assessment.
+        Extract key terms from the query with their importance weights.
+        
+        This method identifies the most important terms in the query
+        that should be used for content filtering.
         
         Args:
             query: The search query
-            documents: List of documents to rerank
             
         Returns:
-            Reranked list of documents
+            Dictionary mapping key terms to their importance weights
         """
-        # Limit the number of documents for LLM reranking to avoid excessive API calls
-        max_docs_for_llm = min(len(documents), 10)
-        docs_for_llm = documents[:max_docs_for_llm]
+        # Simple implementation: split query into terms and assign equal weights
+        terms = query.lower().split()
+        stop_words = {"a", "an", "the", "in", "on", "at", "of", "for", "with", "by", "to", "and", "or", "is", "are"}
         
-        # Create reranked documents
-        reranked_docs = []
+        # Remove stop words and short terms
+        filtered_terms = [term for term in terms if term not in stop_words and len(term) > 2]
         
-        for i, doc in enumerate(docs_for_llm):
-            doc_content = doc.get("content", "")
-            
-            # Truncate content if too long
-            if len(doc_content) > 1000:
-                doc_content = doc_content[:1000] + "..."
-            
-            # Create prompt for relevance assessment
-            prompt = f"""
-            On a scale of 0 to 10, rate the relevance of the following document to the query.
-            Return ONLY a number from 0 to 10, where 0 is completely irrelevant and 10 is perfectly relevant.
-            
-            Query: {query}
-            
-            Document:
-            {doc_content}
-            
-            Relevance score (0-10):
-            """
-            
-            try:
-                # Get relevance score from LLM
-                response = self.llm_manager.generate(
-                    prompt=prompt,
-                    max_tokens=10,
-                    temperature=0.1
-                ).strip()
-                
-                # Parse score
-                try:
-                    score = float(response)
-                    # Normalize score to 0-1 range
-                    normalized_score = score / 10.0
-                except ValueError:
-                    logger.warning(f"Could not parse LLM relevance score: {response}")
-                    normalized_score = 0.5  # Default score
-                
-                # Create reranked document
-                reranked_doc = doc.copy()
-                reranked_doc["score"] = normalized_score
-                reranked_docs.append(reranked_doc)
-            
-            except Exception as e:
-                logger.error(f"Error in LLM reranking for document {i}: {str(e)}")
-                # Keep original document and score
-                reranked_docs.append(doc)
+        # Assign weights based on term length and position
+        term_weights = {}
         
-        # Add remaining documents with their original scores
-        if max_docs_for_llm < len(documents):
-            reranked_docs.extend(documents[max_docs_for_llm:])
+        for i, term in enumerate(filtered_terms):
+            # Terms at the beginning are often more important
+            position_weight = 1.0 - (i / len(filtered_terms)) * 0.5
+            
+            # Longer terms are often more specific and important
+            length_weight = min(1.0, len(term) / 10.0)
+            
+            # Combine weights
+            weight = position_weight * length_weight
+            
+            term_weights[term] = weight
         
-        # Sort by score in descending order
-        reranked_docs.sort(key=lambda x: x["score"], reverse=True)
-        
-        return reranked_docs
+        return term_weights
     
-    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
-        """
-        Calculate cosine similarity between two vectors.
-        
-        Args:
-            vec1: First vector
-            vec2: Second vector
-            
-        Returns:
-            Cosine similarity score
-        """
-        vec1 = np.array(vec1)
-        vec2 = np.array(vec2)
-        
-        dot_product = np.dot(vec1, vec2)
-        norm1 = np.linalg.norm(vec1)
-        norm2 = np.linalg.norm(vec2)
-        
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        
-        return dot_product / (norm1 * norm2)
-
-
-class MultiStageRetriever:
-    """
-    Implements multi-stage retrieval with pre-filtering and reranking.
-    """
-    
-    def __init__(self):
-        """Initialize the multi-stage retriever with necessary components."""
-        self.pre_filter = PreFilter()
-        self.reranker = Reranker()
-    
-    def retrieve(
+    def _diversify_results(
         self,
-        query: str,
         documents: List[Dict[str, Any]],
-        filters: Optional[Dict[str, Any]] = None,
-        top_k: int = 5,
-        reranking_method: str = "cross_encoder"
+        top_k: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Perform multi-stage retrieval with pre-filtering and reranking.
+        Diversify results to avoid redundancy.
+        
+        This method ensures that the final results cover a diverse range of topics
+        rather than focusing on a single aspect of the query.
         
         Args:
-            query: The search query
-            documents: List of documents to search
-            filters: Metadata filters to apply
+            documents: Documents to diversify
             top_k: Number of results to return
-            reranking_method: Method to use for reranking
             
         Returns:
-            List of retrieved documents
+            Diversified list of documents
         """
-        logger.debug(f"Multi-stage retrieval for query: '{query}'")
+        if len(documents) <= top_k:
+            return documents
         
-        # Stage 1: Pre-filtering
-        filtered_docs = self.pre_filter.filter(
-            query=query,
-            documents=documents,
-            filters=filters,
-            max_documents=min(100, len(documents))
-        )
+        # Group documents by source/category
+        groups = defaultdict(list)
         
-        # Stage 2: Reranking
-        reranked_docs = self.reranker.rerank(
-            query=query,
-            documents=filtered_docs,
-            method=reranking_method,
-            top_k=top_k
-        )
+        for doc in documents:
+            metadata = doc.get("metadata", {})
+            # Use source or category as group key
+            group_key = metadata.get("source", metadata.get("category", "default"))
+            groups[group_key].append(doc)
         
-        return reranked_docs 
+        # Select documents from each group in a round-robin fashion
+        diversified = []
+        group_keys = list(groups.keys())
+        
+        while len(diversified) < top_k and group_keys:
+            for key in list(group_keys):  # Use a copy to allow removal
+                if groups[key]:
+                    # Take the highest-ranked document from this group
+                    diversified.append(groups[key].pop(0))
+                    
+                    if len(diversified) >= top_k:
+                        break
+                
+                if not groups[key]:
+                    # Remove empty groups
+                    group_keys.remove(key)
+        
+        # If we still need more documents, take from the original list
+        if len(diversified) < top_k:
+            remaining = [doc for doc in documents if doc not in diversified]
+            diversified.extend(remaining[:top_k - len(diversified)])
+        
+        return diversified 
