@@ -1,0 +1,42 @@
+[
+  {
+    "query": "What are the key components of a RAG system?",
+    "answer": "The key components of a Retrieval-Augmented Generation (RAG) system include: 1) A document store for managing and storing documents, 2) A vector database for efficient similarity search, 3) Embedding models to convert text into vector representations, 4) Retrieval components that find relevant information, 5) Context processing to prioritize and format retrieved information, 6) Prompt engineering to create effective prompts, and 7) Language models to generate responses based on the retrieved context."
+  },
+  {
+    "query": "How does hybrid search work in RAG?",
+    "answer": "Hybrid search in RAG combines multiple retrieval methods to improve search quality. It typically merges results from semantic search (using vector embeddings to find semantically similar content) and keyword search (using traditional text matching like BM25). The results from both methods are combined using a weighted approach, where each document gets a combined score based on both its semantic relevance and keyword match quality. This approach helps overcome the limitations of each individual method, providing more comprehensive and accurate search results."
+  },
+  {
+    "query": "What is the purpose of context prioritization in RAG?",
+    "answer": "Context prioritization in RAG systems serves to filter and rank retrieved information to focus on the most relevant content for answering a user's query. Its purpose is to: 1) Ensure the most important information appears first, 2) Remove irrelevant or redundant content, 3) Optimize the use of the limited context window in LLMs, 4) Improve response quality by providing better context, and 5) Reduce the likelihood of hallucinations by emphasizing the most accurate information. Effective context prioritization helps the LLM focus on the most valuable information when generating responses."
+  },
+  {
+    "query": "How can metadata enrichment improve RAG performance?",
+    "answer": "Metadata enrichment improves RAG performance by adding structured information to documents that enhances retrieval and context quality. It helps by: 1) Enabling more precise filtering during retrieval, 2) Providing additional context for the LLM to understand document relevance, 3) Supporting better ranking of documents based on metadata attributes, 4) Allowing for domain-specific organization of information, and 5) Improving the system's ability to handle complex queries that require understanding document properties beyond just content. Well-structured metadata can significantly enhance both retrieval accuracy and response quality."
+  },
+  {
+    "query": "What techniques are used for token management in RAG systems?",
+    "answer": "Token management in RAG systems employs several techniques to optimize context window usage: 1) Chunking - breaking documents into smaller pieces, 2) Truncation - cutting text to fit within token limits, 3) Prioritization - keeping the most relevant content, 4) Compression - summarizing or condensing information, 5) Sliding window approaches - processing overlapping chunks of text, 6) Token counting - accurately measuring token usage, and 7) Dynamic allocation - adjusting token distribution based on content importance. These techniques help maximize the effective use of the limited context window in language models."
+  },
+  {
+    "query": "How does prompt engineering affect RAG system performance?",
+    "answer": "Prompt engineering significantly affects RAG system performance by: 1) Structuring how context is presented to the LLM, 2) Providing clear instructions that guide the model's response generation, 3) Incorporating few-shot examples to demonstrate desired output formats, 4) Using chain-of-thought techniques to improve reasoning, 5) Balancing between specificity and flexibility in instructions, and 6) Optimizing prompt templates for different query types. Well-designed prompts can dramatically improve response quality, accuracy, and relevance even when using the same retrieved context."
+  },
+  {
+    "query": "What are the challenges in evaluating RAG systems?",
+    "answer": "Evaluating RAG systems presents several challenges: 1) Defining appropriate metrics that capture both retrieval quality and generation accuracy, 2) Creating comprehensive test datasets with ground truth answers, 3) Measuring factual correctness and hallucination rates, 4) Evaluating relevance which can be subjective, 5) Assessing performance across diverse query types, 6) Balancing automated metrics with human evaluation, 7) Comparing systems with different architectures fairly, and 8) Evaluating latency and resource usage alongside quality. These challenges make RAG evaluation a complex and multi-faceted problem requiring both automated and human judgment."
+  },
+  {
+    "query": "How can query rewriting improve retrieval in RAG?",
+    "answer": "Query rewriting improves retrieval in RAG by transforming the original user query into forms that better match relevant documents. It works by: 1) Expanding queries with synonyms or related terms, 2) Breaking complex queries into simpler sub-queries, 3) Removing ambiguous terms or adding clarifying context, 4) Reformulating questions into statements that might better match document text, 5) Adding domain-specific terminology, and 6) Generating multiple query variations to increase retrieval coverage. These techniques help bridge the vocabulary gap between user queries and document content, leading to more comprehensive and accurate retrieval results."
+  },
+  {
+    "query": "What is the role of embeddings in a RAG system?",
+    "answer": "Embeddings play a crucial role in RAG systems by: 1) Converting text into dense vector representations that capture semantic meaning, 2) Enabling similarity search through vector comparisons rather than exact text matching, 3) Serving as the foundation for semantic retrieval by finding conceptually related content, 4) Allowing for efficient indexing and searching in vector databases, 5) Supporting cross-lingual retrieval when multilingual embedding models are used, and 6) Providing a way to measure document relevance based on semantic similarity to queries. High-quality embeddings are essential for effective semantic search capabilities in RAG systems."
+  },
+  {
+    "query": "How can RAG systems be optimized for specific domains?",
+    "answer": "RAG systems can be optimized for specific domains through: 1) Using domain-specific document collections and knowledge bases, 2) Fine-tuning embedding models on domain text to better capture specialized terminology, 3) Customizing chunking strategies based on domain document structures, 4) Developing domain-aware metadata enrichment to capture field-specific attributes, 5) Creating specialized prompt templates that incorporate domain conventions, 6) Implementing domain-specific evaluation metrics and test sets, and 7) Optimizing retrieval methods for the particular characteristics of the domain's information needs. These domain adaptations significantly improve both retrieval accuracy and response quality for specialized applications."
+  }
+] 
