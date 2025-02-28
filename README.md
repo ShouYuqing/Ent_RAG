@@ -31,6 +31,41 @@ Ent_RAG is a sophisticated Retrieval Augmented Generation (RAG) system designed 
 - **Comprehensive Logging**: Tracks performance metrics across the entire pipeline
 - **Dependency Injection**: Allows for easy customization of individual components
 
+## System Architecture
+
+The following diagram illustrates the architecture and data flow of the Ent_RAG system:
+
+![Ent_RAG System Architecture](images/ent_rag_architecture.png)
+
+The system consists of two main pipelines:
+
+### Document Ingestion Pipeline
+1. Documents are uploaded through the API
+2. The Document Processor parses and prepares the documents
+3. The Intelligent Chunker splits documents into semantic chunks
+4. The Metadata Enricher adds structured information to chunks
+5. The Embedding Model creates vector representations
+6. Text and metadata are stored in the Document Store
+7. Vector embeddings are stored in the Vector Store
+
+### Query Processing Pipeline
+1. User submits a query through the API
+2. The Query Rewriter expands and improves the query
+3. The Hybrid Retriever combines vector, keyword, and metadata search
+4. The Multi-Stage Retriever applies pre-filtering and initial ranking
+5. The Relevance Scorer evaluates document relevance using multiple factors
+6. The ReRanker refines the ranking of retrieved documents
+7. The Context Prioritizer filters and orders the retrieved context
+8. The Token Manager optimizes context to fit within token limits
+9. The Prompt Template provides structure for the final prompt
+10. The Prompt Generator combines query, context, and instructions
+11. Few-Shot Examples are added to guide the model's response
+12. Chain-of-Thought techniques are applied for complex reasoning
+13. The prompt is sent to the Large Language Model
+14. The generated response is returned to the user
+
+The EntRAG Core Component orchestrates this entire process, providing a unified interface for both document management and query processing.
+
 ## Project Structure
 
 ```

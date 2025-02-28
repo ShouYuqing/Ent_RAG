@@ -1,0 +1,105 @@
+graph TD
+    %% Define styles
+    classDef core fill:#f9d5e5,stroke:#333,stroke-width:1px
+    classDef retrieval fill:#eeeeee,stroke:#333,stroke-width:1px
+    classDef context fill:#d0f0c0,stroke:#333,stroke-width:1px
+    classDef prompts fill:#b5dcf9,stroke:#333,stroke-width:1px
+    classDef models fill:#f9e79f,stroke:#333,stroke-width:1px
+    classDef data fill:#d7bde2,stroke:#333,stroke-width:1px
+    classDef external fill:#f5b7b1,stroke:#333,stroke-width:1px
+    
+    %% External interfaces
+    User([User/Client])
+    API[API Layer]
+    
+    %% Core component
+    Core[EntRAG Core Component]:::core
+    
+    %% Document ingestion flow
+    DocInput[Document Input]:::external
+    DocProcessor[Document Processor]:::data
+    Chunker[Intelligent Chunker]:::data
+    MetadataEnricher[Metadata Enricher]:::context
+    EmbeddingModel[Embedding Model]:::models
+    DocStore[Document Store]:::data
+    VectorStore[Vector Store]:::data
+    
+    %% Query processing flow
+    QueryInput[Query Input]:::external
+    QueryRewriter[Query Rewriter]:::retrieval
+    HybridRetriever[Hybrid Retriever]:::retrieval
+    MultiStageRetriever[Multi-Stage Retriever]:::retrieval
+    RelevanceScorer[Relevance Scorer]:::retrieval
+    ReRanker[ReRanker]:::retrieval
+    ContextPrioritizer[Context Prioritizer]:::context
+    TokenManager[Token Manager]:::context
+    PromptTemplate[Prompt Template]:::prompts
+    PromptGenerator[Prompt Generator]:::prompts
+    FewShotExamples[Few-Shot Examples]:::prompts
+    ChainOfThought[Chain-of-Thought]:::prompts
+    LLM[Large Language Model]:::models
+    Response[Response]:::external
+    
+    %% Document ingestion connections
+    User -->|Upload Document| API
+    API -->|Forward| Core
+    Core -->|Process| DocInput
+    DocInput -->|Parse| DocProcessor
+    DocProcessor -->|Split| Chunker
+    Chunker -->|Enrich| MetadataEnricher
+    MetadataEnricher -->|Embed| EmbeddingModel
+    EmbeddingModel -->|Store Text| DocStore
+    EmbeddingModel -->|Store Vectors| VectorStore
+    
+    %% Query processing connections
+    User -->|Submit Query| API
+    API -->|Forward| Core
+    Core -->|Process| QueryInput
+    QueryInput -->|Rewrite/Expand| QueryRewriter
+    QueryRewriter -->|Retrieve| HybridRetriever
+    HybridRetriever -->|Filter & Rank| MultiStageRetriever
+    MultiStageRetriever -->|Score| RelevanceScorer
+    RelevanceScorer -->|Rerank| ReRanker
+    ReRanker -->|Prioritize| ContextPrioritizer
+    ContextPrioritizer -->|Optimize| TokenManager
+    TokenManager -->|Format with| PromptTemplate
+    PromptTemplate -->|Generate Prompt| PromptGenerator
+    PromptGenerator -->|Add| FewShotExamples
+    FewShotExamples -->|Apply| ChainOfThought
+    ChainOfThought -->|Send to| LLM
+    LLM -->|Generate| Response
+    Response -->|Return to| API
+    API -->|Display to| User
+    
+    %% Data store connections
+    DocStore -.->|Provide Documents| HybridRetriever
+    VectorStore -.->|Provide Vectors| HybridRetriever
+    
+    %% Add subgraph for document ingestion
+    subgraph Document Ingestion Pipeline
+        DocInput
+        DocProcessor
+        Chunker
+        MetadataEnricher
+        EmbeddingModel
+        DocStore
+        VectorStore
+    end
+    
+    %% Add subgraph for query processing
+    subgraph Query Processing Pipeline
+        QueryInput
+        QueryRewriter
+        HybridRetriever
+        MultiStageRetriever
+        RelevanceScorer
+        ReRanker
+        ContextPrioritizer
+        TokenManager
+        PromptTemplate
+        PromptGenerator
+        FewShotExamples
+        ChainOfThought
+        LLM
+        Response
+    end 
